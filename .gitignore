@@ -48,3 +48,11 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+
+# Private environment configuration
+env/
+.env
+.env.*
+**/.env
+**/.env.*
