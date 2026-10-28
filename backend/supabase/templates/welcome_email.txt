@@ -1,0 +1,13 @@
+Welcome, {{full_name}}!
+
+Your learning journey starts here. Find peers, share what you know, explore learning resources, and build skills together.
+
+Account: {{email}}
+Joined: {{registration_date}}
+
+Use the one-time code in the separate SkillBridge verification email to confirm your address before signing in.
+
+Explore SkillBridge: {{app_url}}
+
+Happy learning,
+The SkillBridge Team

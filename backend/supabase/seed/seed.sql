@@ -1,0 +1,3 @@
+-- SkillBridge intentionally starts with an empty course catalog.
+-- Courses must be authored by approved lecturers and published by an admin;
+-- inserting unowned demo rows would bypass or conflict with that lifecycle.
