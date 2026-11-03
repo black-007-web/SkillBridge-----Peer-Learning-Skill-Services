@@ -51,15 +51,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         imageQuality: 85,
       );
       if (image == null) return;
-      final storage = ref.read(storageServiceProvider);
-      final mime = storage?.mimeForFileName(image.name);
+      final mime = StorageService.mimeForFileName(image.name);
       if (mime == null) {
-        _message('Choose a JPG, PNG, or WebP course image.');
+        _message('Choose a JPEG, PNG, WebP, GIF, or BMP course image.');
         return;
       }
       final bytes = await image.readAsBytes();
       if (bytes.isEmpty || bytes.length > StorageService.maxAvatarBytes) {
-        _message('Choose an image smaller than 2 MB.');
+        _message('Choose an image no larger than 5 MB.');
         return;
       }
       setState(() {
@@ -387,9 +386,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                             : () => setState(() {
                                 _coverBytes = null;
                                 _coverMime = null;
-                              _storedCoverUrl = null;
-                              _coverImage.clear();
-                            }),
+                                _storedCoverUrl = null;
+                                _coverImage.clear();
+                              }),
                         icon: const Icon(Icons.delete_outline),
                         label: const Text('Remove image'),
                       ),

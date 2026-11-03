@@ -7,15 +7,17 @@ class StorageService {
 
   final SupabaseClient client;
   static const bucket = 'avatars';
-  static const maxAvatarBytes = 2 * 1024 * 1024;
+  static const maxAvatarBytes = 5 * 1024 * 1024;
   static const allowedMimeTypes = {
+    'bmp': 'image/bmp',
+    'gif': 'image/gif',
     'jpg': 'image/jpeg',
     'jpeg': 'image/jpeg',
     'png': 'image/png',
     'webp': 'image/webp',
   };
 
-  String? mimeForFileName(String name) {
+  static String? mimeForFileName(String name) {
     final extension = name.split('.').last.toLowerCase();
     return allowedMimeTypes[extension];
   }
@@ -48,7 +50,7 @@ class StorageService {
     required Uint8List bytes,
     required String mimeType,
   }) async {
-    final extension = _validatedImageExtension(bytes, mimeType);
+    final extension = validatedImageExtension(bytes, mimeType);
     final path =
         '$userId/${prefix}_${DateTime.now().microsecondsSinceEpoch}.$extension';
     await client.storage
@@ -67,7 +69,7 @@ class StorageService {
     required Uint8List bytes,
     required String mimeType,
   }) async {
-    final extension = _validatedImageExtension(bytes, mimeType);
+    final extension = validatedImageExtension(bytes, mimeType);
     final path =
         '$userId/course_covers/$courseId/cover_${DateTime.now().microsecondsSinceEpoch}.$extension';
     await client.storage
@@ -110,20 +112,22 @@ class StorageService {
 
   Future<void> removeCourseCover(String path) async {
     if (path.startsWith('course-covers:')) {
-      await client.storage
-          .from('course-covers')
-          .remove([path.substring('course-covers:'.length)]);
+      await client.storage.from('course-covers').remove([
+        path.substring('course-covers:'.length),
+      ]);
       return;
     }
     await client.storage.from(bucket).remove([path]);
   }
 
-  String _validatedImageExtension(Uint8List bytes, String mimeType) {
+  static String validatedImageExtension(Uint8List bytes, String mimeType) {
     if (bytes.isEmpty || bytes.length > maxAvatarBytes) {
-      throw const StorageException('Images must be smaller than 2 MB.');
+      throw const StorageException('Images must be 5 MB or smaller.');
     }
     if (!allowedMimeTypes.values.contains(mimeType)) {
-      throw const StorageException('Choose a JPG, PNG, or WebP image.');
+      throw const StorageException(
+        'Choose a JPEG, PNG, WebP, GIF, or BMP image.',
+      );
     }
     if (!_matchesMime(bytes, mimeType)) {
       throw const StorageException(
@@ -131,6 +135,8 @@ class StorageService {
       );
     }
     return switch (mimeType) {
+      'image/bmp' => 'bmp',
+      'image/gif' => 'gif',
       'image/jpeg' => 'jpg',
       'image/png' => 'png',
       'image/webp' => 'webp',
@@ -143,10 +149,15 @@ class StorageService {
     caseSensitive: false,
   ).hasMatch(value);
 
-  bool _matchesMime(Uint8List bytes, String mimeType) {
+  static bool _matchesMime(Uint8List bytes, String mimeType) {
     bool at(int index, int value) =>
         index < bytes.length && bytes[index] == value;
     return switch (mimeType) {
+      'image/bmp' => bytes.length >= 2 && at(0, 0x42) && at(1, 0x4D),
+      'image/gif' =>
+        bytes.length >= 6 &&
+            (String.fromCharCodes(bytes.sublist(0, 6)) == 'GIF87a' ||
+                String.fromCharCodes(bytes.sublist(0, 6)) == 'GIF89a'),
       'image/jpeg' =>
         bytes.length >= 3 && at(0, 0xFF) && at(1, 0xD8) && at(2, 0xFF),
       'image/png' =>

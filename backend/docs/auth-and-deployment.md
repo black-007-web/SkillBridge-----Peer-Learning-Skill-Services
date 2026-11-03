@@ -7,7 +7,7 @@
 - GoRouter auth redirects and protected profile, settings, notifications, and
   recovery routes. Supabase's auth stream restores and refreshes sessions.
 - Profile editing and private avatars. Avatar images are checked for JPEG, PNG,
-  or WebP signatures and limited to 2 MiB before upload.
+  WebP, GIF, or BMP signatures and limited to 5 MiB before upload.
 - Registration collects a phone number as profile contact information. Account
   verification codes are sent to email; SMS verification is not required.
 - Per-user notification preferences and a database-backed notification inbox.

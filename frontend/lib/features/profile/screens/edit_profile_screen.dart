@@ -86,15 +86,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         imageQuality: 85,
       );
       if (image == null) return;
-      final storage = ref.read(storageServiceProvider);
-      final mime = storage?.mimeForFileName(image.name);
+      final mime = StorageService.mimeForFileName(image.name);
       if (mime == null) {
-        setState(() => _error = 'Choose a JPG, PNG, or WebP image.');
+        setState(() => _error = 'Choose a JPEG, PNG, WebP, GIF, or BMP image.');
         return;
       }
       final bytes = await image.readAsBytes();
       if (bytes.isEmpty || bytes.length > StorageService.maxAvatarBytes) {
-        setState(() => _error = 'Choose an image smaller than 2 MB.');
+        setState(() => _error = 'Choose an image no larger than 5 MB.');
         return;
       }
       setState(() {
@@ -117,15 +116,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         imageQuality: 85,
       );
       if (image == null) return;
-      final storage = ref.read(storageServiceProvider);
-      final mime = storage?.mimeForFileName(image.name);
+      final mime = StorageService.mimeForFileName(image.name);
       if (mime == null) {
-        setState(() => _error = 'Choose a JPG, PNG, or WebP cover image.');
+        setState(
+          () => _error = 'Choose a JPEG, PNG, WebP, GIF, or BMP cover image.',
+        );
         return;
       }
       final bytes = await image.readAsBytes();
       if (bytes.isEmpty || bytes.length > StorageService.maxAvatarBytes) {
-        setState(() => _error = 'Choose a cover image smaller than 2 MB.');
+        setState(() => _error = 'Choose a cover image no larger than 5 MB.');
         return;
       }
       setState(() {

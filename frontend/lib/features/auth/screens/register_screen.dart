@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:country_picker/country_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../providers/auth_provider.dart';
 import '../../../core/supabase_config.dart';
+import '../../../data/east_delta_academic_catalog.dart';
+import '../../../services/storage_service.dart';
 import '../widgets/auth_widgets.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -29,15 +32,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _studentNumber = TextEditingController();
-  final _department = TextEditingController();
-  final _program = TextEditingController();
   final _phone = TextEditingController();
   final _dob = TextEditingController();
-  final _nationality = TextEditingController();
   final _address = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   DateTime? _dateOfBirth;
+  Country _nationality = Country.parse('BD');
+  Country _phoneCountry = Country.parse('BD');
+  String? _department;
+  String? _program;
   String? _gender;
   Uint8List? _avatarBytes;
   String? _avatarMime;
@@ -52,15 +56,48 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _name.dispose();
     _email.dispose();
     _studentNumber.dispose();
-    _department.dispose();
-    _program.dispose();
     _phone.dispose();
     _dob.dispose();
-    _nationality.dispose();
     _address.dispose();
     _password.dispose();
     _confirm.dispose();
     super.dispose();
+  }
+
+  void _pickNationality() {
+    showCountryPicker(
+      context: context,
+      showPhoneCode: true,
+      favorite: const ['BD'],
+      onSelect: (country) => setState(() {
+        _nationality = country;
+        _phoneCountry = country;
+      }),
+    );
+  }
+
+  void _pickPhoneCountry() {
+    showCountryPicker(
+      context: context,
+      showPhoneCode: true,
+      favorite: const ['BD'],
+      onSelect: (country) => setState(() => _phoneCountry = country),
+    );
+  }
+
+  String _normalizedPhoneNumber() {
+    return _normalizedPhoneNumberFrom(_phone.text);
+  }
+
+  bool _isValidLocalPhone(String value) =>
+      _validPhone(_normalizedPhoneNumberFrom(value));
+
+  String _normalizedPhoneNumberFrom(String value) {
+    var nationalNumber = value.replaceAll(RegExp(r'\D'), '');
+    if (nationalNumber.startsWith('0')) {
+      nationalNumber = nationalNumber.substring(1);
+    }
+    return '+${_phoneCountry.phoneCode}$nationalNumber';
   }
 
   Future<void> _pickDate() async {
@@ -90,15 +127,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         imageQuality: 85,
       );
       if (image == null) return;
-      final storage = ref.read(storageServiceProvider);
-      final mime = storage?.mimeForFileName(image.name);
+      final mime = StorageService.mimeForFileName(image.name);
       if (mime == null) {
-        setState(() => _error = 'Choose a JPG, PNG, or WebP image.');
+        setState(() => _error = 'Choose a JPEG, PNG, WebP, GIF, or BMP image.');
         return;
       }
       final bytes = await image.readAsBytes();
-      if (bytes.isEmpty || bytes.length > 2 * 1024 * 1024) {
-        setState(() => _error = 'Choose an image smaller than 2 MB.');
+      if (bytes.isEmpty || bytes.length > StorageService.maxAvatarBytes) {
+        setState(() => _error = 'Choose an image no larger than 5 MB.');
         return;
       }
       setState(() {
@@ -142,12 +178,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         profile: {
           'full_name': _name.text.trim(),
           'student_number': _studentNumber.text.trim(),
-          'department': _department.text.trim(),
-          'program': _program.text.trim(),
-          'phone_number': _phone.text.trim(),
+          'department': _department,
+          'program': _program,
+          'phone_number': _normalizedPhoneNumber(),
           'date_of_birth': _formatDate(_dateOfBirth!),
           'gender': _gender,
-          'nationality': _nationality.text.trim(),
+          'nationality': _nationality.name,
           'address': _address.text.trim(),
           'terms_accepted_at': DateTime.now().toUtc().toIso8601String(),
         },
@@ -310,36 +346,67 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       labelText: 'Student number',
                       prefixIcon: Icon(Icons.badge_outlined),
                     ),
-                    validator: (value) => (value?.trim().length ?? 0) >= 2 &&
+                    validator: (value) =>
+                        (value?.trim().length ?? 0) >= 2 &&
                             (value?.trim().length ?? 0) <= 40
                         ? null
                         : 'Enter a valid student number',
                   ),
                   const SizedBox(height: 14),
-                  TextFormField(
-                    controller: _department,
-                    enabled: !busy,
-                    textCapitalization: TextCapitalization.words,
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: _department,
                     decoration: const InputDecoration(
                       labelText: 'Department',
                       prefixIcon: Icon(Icons.account_balance_outlined),
                     ),
-                    validator: (value) => (value?.trim().length ?? 0) >= 2
+                    items: [
+                      for (final department
+                          in eastDeltaProgramsByDepartment.keys)
+                        DropdownMenuItem(
+                          value: department,
+                          child: Text(
+                            department,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: busy
                         ? null
-                        : 'Enter your department',
+                        : (value) => setState(() {
+                            _department = value;
+                            _program = null;
+                          }),
+                    validator: (value) =>
+                        value == null ? 'Select your department' : null,
                   ),
                   const SizedBox(height: 14),
-                  TextFormField(
-                    controller: _program,
-                    enabled: !busy,
-                    textCapitalization: TextCapitalization.words,
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: _program,
                     decoration: const InputDecoration(
                       labelText: 'Program',
                       prefixIcon: Icon(Icons.school_outlined),
                     ),
-                    validator: (value) => (value?.trim().length ?? 0) >= 2
+                    items: [
+                      for (final program
+                          in eastDeltaProgramsByDepartment[_department] ??
+                              const <String>[])
+                        DropdownMenuItem(
+                          value: program,
+                          child: Text(
+                            program,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: busy || _department == null
                         ? null
-                        : 'Enter your program',
+                        : (value) => setState(() => _program = value),
+                    validator: (value) =>
+                        value == null ? 'Select your program' : null,
                   ),
                   const SizedBox(height: 14),
                   TextFormField(
@@ -348,15 +415,24 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     keyboardType: TextInputType.phone,
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.telephoneNumber],
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Phone number',
-                      hintText: '+8801XXXXXXXXX',
-                      helperText: 'Include country code, e.g. +880 or +1',
-                      prefixIcon: Icon(Icons.phone_outlined),
+                      hintText: '1XXXXXXXXX',
+                      helperText:
+                          'Country code follows your nationality. Omit '
+                          'Bangladesh’s leading 0.',
+                      prefixIconConstraints: const BoxConstraints(
+                        minWidth: 86,
+                        minHeight: 48,
+                      ),
+                      prefixIcon: TextButton(
+                        onPressed: busy ? null : _pickPhoneCountry,
+                        child: Text('+${_phoneCountry.phoneCode} ▾'),
+                      ),
                     ),
-                    validator: (value) => _validPhone(value?.trim() ?? '')
+                    validator: (value) => _isValidLocalPhone(value ?? '')
                         ? null
-                        : 'Enter a valid number with country code',
+                        : 'Enter a valid local phone number.',
                   ),
                   const SizedBox(height: 14),
                   TextFormField(
@@ -392,17 +468,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         : (value) => setState(() => _gender = value),
                   ),
                   const SizedBox(height: 14),
-                  TextFormField(
-                    controller: _nationality,
-                    enabled: !busy,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Nationality (optional)',
-                      prefixIcon: Icon(Icons.flag_outlined),
+                  InkWell(
+                    onTap: busy ? null : _pickNationality,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Nationality',
+                        prefixIcon: Icon(Icons.flag_outlined),
+                        suffixIcon: Icon(Icons.arrow_drop_down),
+                      ),
+                      child: Text(
+                        '${_nationality.flagEmoji}  ${_nationality.name}',
+                      ),
                     ),
-                    validator: (value) => (value?.length ?? 0) <= 80
-                        ? null
-                        : 'Use 80 characters or fewer',
                   ),
                   const SizedBox(height: 14),
                   TextFormField(

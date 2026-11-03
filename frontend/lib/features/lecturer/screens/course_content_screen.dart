@@ -21,6 +21,8 @@ class _CourseContentScreenState extends ConsumerState<CourseContentScreen> {
   ResourceService? get _resources => ref.read(resourceServiceProvider);
   bool _editable = false;
   bool _uploading = false;
+  int _folderUploadCompleted = 0;
+  int _folderUploadTotal = 0;
 
   @override
   void initState() {
@@ -228,9 +230,153 @@ class _CourseContentScreenState extends ConsumerState<CourseContentScreen> {
   }
 
   Future<void> _deleteFolder(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete folder and its contents?'),
+        content: const Text(
+          'This permanently deletes every file, link, and nested folder inside it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete everything'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     try {
-      await _resources!.deleteFolder(id);
-      if (mounted) setState(_load);
+      final deletedResources = await _resources!.deleteFolder(id);
+      if (mounted) {
+        setState(_load);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Folder and $deletedResources contained resource(s) deleted.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      _error(error);
+    }
+  }
+
+  Widget _folderTile(
+    Map<String, dynamic> folder,
+    List<Map<String, dynamic>> folders,
+    List<Map<String, dynamic>> resources,
+  ) {
+    final folderId = folder['id'] as String;
+    final children = folders
+        .where((item) => item['parent_id'] == folderId)
+        .toList();
+    final contents = resources
+        .where((item) => item['folder_id'] == folderId)
+        .toList();
+    return ExpansionTile(
+      leading: const Icon(Icons.folder_outlined),
+      title: Text('${folder['name']}'),
+      subtitle: Text(
+        '${contents.length} items • ${children.length} subfolders',
+      ),
+      children: [
+        if (_editable)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              children: [
+                TextButton.icon(
+                  onPressed: () => _renameFolder(folder),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Rename'),
+                ),
+                TextButton.icon(
+                  onPressed: () => _upload(folderId: folderId),
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text('Upload file'),
+                ),
+                TextButton.icon(
+                  onPressed: () => _uploadFolder(folderId: folderId),
+                  icon: const Icon(Icons.drive_folder_upload_outlined),
+                  label: const Text('Upload folder'),
+                ),
+                TextButton.icon(
+                  onPressed: () => _addLink(folderId: folderId),
+                  icon: const Icon(Icons.link),
+                  label: const Text('Add link'),
+                ),
+                TextButton.icon(
+                  onPressed: () => _deleteFolder(folderId),
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete'),
+                ),
+              ],
+            ),
+          ),
+        ...contents.map(_resourceTile),
+        ...children.map((child) => _folderTile(child, folders, resources)),
+      ],
+    );
+  }
+
+  Widget _resourceTile(Map<String, dynamic> resource) => ListTile(
+    leading: Icon(
+      resource['resource_type'] == 'link'
+          ? Icons.link
+          : Icons.insert_drive_file_outlined,
+    ),
+    title: Text('${resource['title']}'),
+    subtitle: Text('${resource['resource_type']}'),
+    trailing: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Access resource',
+          onPressed: () => _openResource(resource),
+          icon: const Icon(Icons.visibility_outlined),
+        ),
+        if (resource['storage_path'] != null)
+          IconButton(
+            tooltip: 'Download resource',
+            onPressed: () => _downloadResource(resource),
+            icon: const Icon(Icons.download_outlined),
+          ),
+        if (_editable)
+          IconButton(
+            tooltip: 'Edit resource',
+            onPressed: () => _editResource(resource),
+            icon: const Icon(Icons.edit_outlined),
+          ),
+        if (_editable)
+          IconButton(
+            tooltip: 'Delete resource',
+            onPressed: () async {
+              try {
+                await _resources!.deleteResource(resource);
+                if (mounted) setState(_load);
+              } catch (error) {
+                _error(error);
+              }
+            },
+            icon: const Icon(Icons.delete_outline),
+          ),
+      ],
+    ),
+  );
+
+  Future<void> _downloadResource(Map<String, dynamic> resource) async {
+    try {
+      final url = await _resources!.signedUrl(
+        resource['storage_path'] as String,
+        downloadAs: '${resource['title']}',
+      );
+      await _openExternal(url);
     } catch (error) {
       _error(error);
     }
@@ -255,6 +401,123 @@ class _CourseContentScreenState extends ConsumerState<CourseContentScreen> {
       _error(error);
     } finally {
       if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _uploadFolder({String? folderId}) async {
+    if (_uploading) return;
+    setState(() {
+      _uploading = true;
+      _folderUploadCompleted = 0;
+      _folderUploadTotal = 0;
+    });
+    try {
+      final result = await _resources!.pickAndUploadFolder(
+        courseId: widget.courseId,
+        folderId: folderId,
+        onProgress: (completed, total) {
+          if (mounted) {
+            setState(() {
+              _folderUploadCompleted = completed;
+              _folderUploadTotal = total;
+            });
+          }
+        },
+      );
+      if (!mounted) return;
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Folder selection cancelled. No files were uploaded.',
+            ),
+          ),
+        );
+        return;
+      }
+      setState(_load);
+      if (result.total == 0) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('No files found'),
+            content: Text(
+              result.warning ??
+                  'The selected folder "${result.folderName}" contains no files.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            result.failures.isEmpty
+                ? 'Upload complete'
+                : result.uploaded.isEmpty
+                ? 'Folder upload failed'
+                : 'Folder upload finished with issues',
+          ),
+          content: SizedBox(
+            width: 440,
+            height: 320,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (result.warning case final warning?) ...[
+                  Text(warning),
+                  const SizedBox(height: 8),
+                ],
+                Text('Folder: ${result.folderName}'),
+                const SizedBox(height: 8),
+                Text(
+                  'Uploaded ${result.uploaded.length} of ${result.total} files. '
+                  '${result.failures.length} could not be uploaded. '
+                  'Each file must be no larger than 50 MB.',
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView(
+                    children: result.failures
+                        .map(
+                          (failure) => ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(failure.filePath),
+                            subtitle: Text(failure.message),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      _error(error);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _uploading = false;
+          _folderUploadCompleted = 0;
+          _folderUploadTotal = 0;
+        });
+      }
     }
   }
 
@@ -439,6 +702,9 @@ class _CourseContentScreenState extends ConsumerState<CourseContentScreen> {
           );
         }
         final data = snapshot.data!;
+        final rootResources = data.resources
+            .where((resource) => resource['folder_id'] == null)
+            .toList();
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -448,9 +714,18 @@ class _CourseContentScreenState extends ConsumerState<CourseContentScreen> {
             ),
             if (_uploading) ...[
               const SizedBox(height: 12),
-              const LinearProgressIndicator(),
+              LinearProgressIndicator(
+                value: _folderUploadTotal == 0
+                    ? null
+                    : _folderUploadCompleted / _folderUploadTotal,
+              ),
               const SizedBox(height: 6),
-              const Text('Uploading and saving resource metadata…'),
+              Text(
+                _folderUploadTotal == 0
+                    ? 'Waiting for folder selection…'
+                    : 'Uploading files: $_folderUploadCompleted/'
+                          '$_folderUploadTotal',
+              ),
             ],
             if (!_editable)
               const Padding(
@@ -489,42 +764,11 @@ class _CourseContentScreenState extends ConsumerState<CourseContentScreen> {
               const ListTile(
                 title: Text('No resource folders have been added.'),
               ),
-            ...data.folders.map(
-              (folder) => ListTile(
-                leading: const Icon(Icons.folder_outlined),
-                title: Text('${folder['name']}'),
-                trailing: _editable
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: 'Rename folder',
-                            onPressed: () => _renameFolder(folder),
-                            icon: const Icon(Icons.edit_outlined),
-                          ),
-                          IconButton(
-                            tooltip: 'Upload to folder',
-                            onPressed: () =>
-                                _upload(folderId: folder['id'] as String),
-                            icon: const Icon(Icons.upload_file),
-                          ),
-                          IconButton(
-                            tooltip: 'Add link to folder',
-                            onPressed: () =>
-                                _addLink(folderId: folder['id'] as String),
-                            icon: const Icon(Icons.link),
-                          ),
-                          IconButton(
-                            tooltip: 'Delete folder',
-                            onPressed: () =>
-                                _deleteFolder(folder['id'] as String),
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                        ],
-                      )
-                    : null,
-              ),
-            ),
+            ...data.folders
+                .where((folder) => folder['parent_id'] == null)
+                .map(
+                  (folder) => _folderTile(folder, data.folders, data.resources),
+                ),
             if (_editable)
               Wrap(
                 spacing: 8,
@@ -535,6 +779,11 @@ class _CourseContentScreenState extends ConsumerState<CourseContentScreen> {
                     label: const Text('Upload file'),
                   ),
                   OutlinedButton.icon(
+                    onPressed: _uploadFolder,
+                    icon: const Icon(Icons.drive_folder_upload_outlined),
+                    label: const Text('Upload folder'),
+                  ),
+                  OutlinedButton.icon(
                     onPressed: _addLink,
                     icon: const Icon(Icons.link),
                     label: const Text('Add HTTPS link'),
@@ -543,48 +792,9 @@ class _CourseContentScreenState extends ConsumerState<CourseContentScreen> {
               ),
             const SizedBox(height: 12),
             Text('Resources', style: Theme.of(context).textTheme.titleLarge),
-            if (data.resources.isEmpty)
-              const ListTile(title: Text('No resources yet.')),
-            ...data.resources.map(
-              (resource) => ListTile(
-                leading: Icon(
-                  resource['resource_type'] == 'link'
-                      ? Icons.link
-                      : Icons.insert_drive_file_outlined,
-                ),
-                title: Text('${resource['title']}'),
-                subtitle: Text('${resource['resource_type']}'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'Open resource',
-                      onPressed: () => _openResource(resource),
-                      icon: const Icon(Icons.open_in_new),
-                    ),
-                    if (_editable)
-                      IconButton(
-                        tooltip: 'Edit resource',
-                        onPressed: () => _editResource(resource),
-                        icon: const Icon(Icons.edit_outlined),
-                      ),
-                    if (_editable)
-                      IconButton(
-                        tooltip: 'Delete resource',
-                        onPressed: () async {
-                          try {
-                            await _resources!.deleteResource(resource);
-                            if (mounted) setState(_load);
-                          } catch (error) {
-                            _error(error);
-                          }
-                        },
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                  ],
-                ),
-              ),
-            ),
+            if (rootResources.isEmpty)
+              const ListTile(title: Text('No resources outside folders yet.')),
+            ...rootResources.map(_resourceTile),
           ],
         );
       },
@@ -594,8 +804,7 @@ class _CourseContentScreenState extends ConsumerState<CourseContentScreen> {
   Future<void> _openExternal(String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null || uri.scheme != 'https') return;
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
-        mounted) {
+    if (!await launchUrl(uri, mode: LaunchMode.platformDefault) && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open the resource link.')),
       );

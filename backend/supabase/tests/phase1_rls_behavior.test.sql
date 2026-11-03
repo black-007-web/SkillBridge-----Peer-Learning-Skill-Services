@@ -36,7 +36,7 @@ insert into public.lessons(id, module_id, title, body, position) values
 insert into public.enrollments(id, user_id, course_id, status) values
   ('50000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','active');
 
-select plan(25);
+select plan(27);
 set local role authenticated;
 set local request.jwt.claim.role = 'authenticated';
 set local request.jwt.claim.sub = '10000000-0000-4000-8000-000000000001';
@@ -102,6 +102,15 @@ select lives_ok($$insert into public.resources(course_id, title, resource_type,
     '20000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000003/course.pdf',
     100, auth.uid())$$,
   'a course owner can save resource metadata for an uploaded file');
+select lives_ok($$insert into public.resources(course_id, title, resource_type,
+  storage_path, mime_type, file_size_bytes, created_by)
+  values ('20000000-0000-4000-8000-000000000001','Empty source file','other',
+    '20000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000003/source.bin',
+    'application/x-unlisted-test-type', 0, auth.uid())$$,
+  'a course owner can save zero-byte resources with unlisted MIME types');
+select is((select allowed_mime_types from storage.buckets
+  where id = 'course-resources'), null::text[],
+  'course resource storage accepts any MIME type');
 select throws_ok($$select public.lecturer_course_roster('20000000-0000-4000-8000-000000000003')$$,
   'P0001', 'Verified course owner access required', 'a lecturer cannot read another lecturer roster');
 

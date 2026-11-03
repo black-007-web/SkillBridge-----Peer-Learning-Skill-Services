@@ -11,9 +11,16 @@
 - `is_verified_user()` checks `auth.users.email_confirmed_at` in a
   security-definer function. Policies also require the caller's own `auth.uid()`.
   The client cannot write roles or verification status.
-- The private `avatars` bucket limits files to 2 MiB and JPEG, PNG, and WebP.
+- The private `avatars` bucket limits files to 5 MiB and JPEG, PNG, WebP, GIF,
+  and BMP images.
+- Storage policies scope every object path to the authenticated user's UUID.
+  The app checks image signatures and uses signed URLs for display.
   Storage policies scope every object path to the authenticated user's UUID.
   The app checks image signatures and uses signed URLs for display.
+- The private `course-resources` bucket accepts any MIME type for lecturer
+  course content. Its per-file size limit remains 50 MiB, and existing Storage
+  policies restrict uploads to lecturers who manage the course. Empty files
+  are valid resources; profile images remain restricted to verified image types.
 - Configure Supabase email confirmation, password reset, Google OAuth, SMTP,
   and redirect/deep link URLs for each environment using
   [`auth-and-deployment.md`](auth-and-deployment.md). The Flutter app uses

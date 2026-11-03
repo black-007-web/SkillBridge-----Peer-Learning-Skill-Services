@@ -20,7 +20,7 @@ void main() {
 
     expect(find.text('Enter your full name'), findsOneWidget);
     expect(find.text('Enter a valid email address'), findsOneWidget);
-    expect(find.text('Enter a valid number with country code'), findsOneWidget);
+    expect(find.text('Enter a valid local phone number.'), findsOneWidget);
     expect(
       find.text('Choose your date of birth (13 or older)'),
       findsOneWidget,
@@ -59,12 +59,14 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(app(const LoginScreen()));
+    await tester.pump(const Duration(seconds: 2));
     await tester.enterText(
       find.byType(TextFormField).first,
       'amina@example.com',
     );
+    await tester.ensureVisible(find.text('Log in'));
     await tester.tap(find.text('Log in'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.text('Enter your password'), findsOneWidget);
   });

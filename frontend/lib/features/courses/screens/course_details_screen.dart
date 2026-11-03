@@ -430,6 +430,8 @@ class _ContentListState extends ConsumerState<_ContentList> {
                 service: _resources,
                 openResource: (resource) =>
                     _open(context, _resources, resource),
+                downloadResource: (resource) =>
+                    _download(context, _resources, resource),
               ),
             ],
           );
@@ -498,6 +500,8 @@ class _ContentListState extends ConsumerState<_ContentList> {
               courseId: widget.courseId,
               service: _resources,
               openResource: (resource) => _open(context, _resources, resource),
+              downloadResource: (resource) =>
+                  _download(context, _resources, resource),
             ),
           ],
         );
@@ -554,8 +558,32 @@ class _ContentListState extends ConsumerState<_ContentList> {
       final uri = Uri.tryParse(link);
       if (uri == null ||
           uri.scheme != 'https' ||
-          !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+          !await launchUrl(uri, mode: LaunchMode.platformDefault)) {
         throw StateError('The resource could not be opened.');
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+      }
+    }
+  }
+
+  Future<void> _download(
+    BuildContext context,
+    ResourceService service,
+    Map<String, dynamic> resource,
+  ) async {
+    try {
+      final url = await service.signedUrl(
+        resource['storage_path'] as String,
+        downloadAs: '${resource['title']}',
+      );
+      final uri = Uri.tryParse(url);
+      if (uri == null ||
+          uri.scheme != 'https' ||
+          !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw StateError('The resource could not be downloaded.');
       }
     } catch (error) {
       if (context.mounted) {
@@ -571,10 +599,12 @@ class _ResourcesList extends StatelessWidget {
     required this.courseId,
     required this.service,
     required this.openResource,
+    required this.downloadResource,
   });
   final String courseId;
   final ResourceService service;
   final ValueChanged<Map<String, dynamic>> openResource;
+  final ValueChanged<Map<String, dynamic>> downloadResource;
   @override
   Widget build(BuildContext context) =>
       FutureBuilder<List<Map<String, dynamic>>>(
@@ -606,6 +636,22 @@ class _ResourcesList extends StatelessWidget {
                   leading: const Icon(Icons.attach_file),
                   title: Text('${resource['title']}'),
                   subtitle: Text('${resource['resource_type']}'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Access resource',
+                        onPressed: () => openResource(resource),
+                        icon: const Icon(Icons.visibility_outlined),
+                      ),
+                      if (resource['storage_path'] != null)
+                        IconButton(
+                          tooltip: 'Download resource',
+                          onPressed: () => downloadResource(resource),
+                          icon: const Icon(Icons.download_outlined),
+                        ),
+                    ],
+                  ),
                   onTap: () => openResource(resource),
                 ),
               ),
